@@ -6,6 +6,7 @@
 import numpy as np
 import copy
 import re
+from dataclasses import dataclass
 
 
 def read(filename):
@@ -22,7 +23,8 @@ def read(filename):
 
     return arr1, arr2
 
-def read_lists(filename):
+
+def read_lists(filename, is_int=True):
     lists = []
     with open(filename) as f:
         while True:
@@ -30,9 +32,9 @@ def read_lists(filename):
             if s == '':
                 break
             numbers = s.split()
-            numbers = [int(i) for i in numbers]
-            if len(numbers) > 1:
-                lists.append(numbers)
+            if is_int:
+                numbers = [int(i) for i in numbers]
+            lists.append(numbers)
 
     return lists
 
@@ -194,17 +196,56 @@ def day3():
 
 def day4():
 
-    s = read_all('input4.txt')
+    grid = read_lists('input4.txt', is_int=False)
+    grid = [list(line[0]) for line in grid]
 
-    line_length = s.index('\n')
-    print(line_length)
-
+    line_length = len(grid[0])
+    lines_count = len(grid)
     count = 0
 
+    @dataclass
+    class Coor:
+        row: int = 0
+        col: int = 0
 
+        def __add__(self, other):
+            n_row = self.row + other.row
+            n_col = self.col + other.col
+            return Coor(n_row, n_col)
 
-    return count
+        def __sub__(self, other):
+            n_row = self.row - other.row
+            n_col = self.col - other.col
+            return Coor(n_row, n_col)
 
+    def check_adjacent_(letter, direction, c: Coor):
+        n = c + direction
+        if 0 <= n.row < lines_count and 0 <= n.col < line_length:
+            return grid[n.row][n.col] == letter, n
+        return False, n
+
+    to_match = 'MAS'
+    directions = [Coor(vert, hori) for vert in [-1, 1] for hori in [-1, 1]]
+
+    coordinate_dict = {}
+
+    for i, row in enumerate(grid):
+        for j, ele in enumerate(row):
+            if ele == to_match[0]:
+                for direction in directions:
+                    c = Coor(i, j)
+                    for idx in range(1, len(to_match)):
+                        found, next_c = check_adjacent_(to_match[idx], direction, c)
+                        if not found:
+                            break
+                        elif idx == len(to_match) - 1:
+                            coordinate_tuple = (c.row, c.col)
+                            if coordinate_tuple in coordinate_dict:
+                                coordinate_dict[coordinate_tuple] += 1
+                            else:
+                                coordinate_dict[coordinate_tuple] = 1
+                        c = next_c
+    return len([cnt for coord, cnt in coordinate_dict.items() if cnt > 1])
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -212,6 +253,7 @@ if __name__ == '__main__':
     # print(day2())
     # print(day3())
     print(day4())
+
 
 
 
