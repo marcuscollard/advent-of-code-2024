@@ -7,6 +7,8 @@ import numpy as np
 import copy
 import re
 from dataclasses import dataclass
+from collections import defaultdict
+import random
 
 
 def read(filename):
@@ -52,10 +54,6 @@ def day1():
     np2 = np.array(arr2)
 
     distance = np.sum(np.abs(np.subtract(np1, np2)))
-    print(distance)
-
-    print(np.count_nonzero(np.unique(np1)))
-    print(np.count_nonzero(np.unique(np2)))
 
     prev_num = -1
     prev_total = 0
@@ -67,8 +65,6 @@ def day1():
         # If the current number matches the previous, use the previously computed total
         if num == prev_num:
             total += prev_total
-            if prev_total > 0:
-                print(prev_total)
             continue
 
         # Reset factor to count occurrences for the current num
@@ -84,22 +80,16 @@ def day1():
         total += prev_total
 
         if prev_total > 0:
-            print(factor)
             factors += factor
-            print(prev_total)
 
         # Update the previous number
         prev_num = num
-
-    print(factors)
-    print(total)
+    return total
 
 
 def day2():
 
-    lists = read_lists('input3.txt')
-
-    print(len(lists))
+    lists = read_lists('input2.txt')
 
     safe = 0
     for orig_lst in lists:
@@ -159,8 +149,6 @@ def day3():
 
     # 174199222
     # 173731097
-
-    print(tokens)
 
     total = 0
 
@@ -247,12 +235,139 @@ def day4():
                         c = next_c
     return len([cnt for coord, cnt in coordinate_dict.items() if cnt > 1])
 
+
+def day5():
+
+    input_str = read_all('input5.txt')
+
+#     input_str = """47|53
+# 97|13
+# 97|61
+# 97|47
+# 75|29
+# 61|13
+# 75|53
+# 29|13
+# 97|29
+# 53|29
+# 61|53
+# 97|53
+# 61|29
+# 47|13
+# 75|47
+# 97|75
+# 47|61
+# 75|61
+# 47|29
+# 75|13
+# 53|13
+#
+# 75,47,61,53,29
+# 97,61,53,29,13
+# 75,29,13
+# 75,97,47,61,53
+# 61,13,29
+# 97,13,75,29,47"""
+
+    sections = input_str.split('\n\n')
+
+    rules_list = sections[0].split('\n')
+    lists = sections[1].split('\n')
+
+    rules_list = [tuple(map(int, r.split('|'))) for r in rules_list]
+    lists = [[int(num) for num in i.split(',') if num.strip()] for i in lists]
+
+    print(lists[0])
+
+    # print(rules[-1])
+
+    rules_list.sort()
+
+    rules = defaultdict(list)
+
+    for a, b in rules_list:
+        rules[a].append(b)
+
+    count = 0
+
+    def is_valid(manual):
+        violations = []
+        for i, num in enumerate(manual):
+            # find the rules of num
+            for greater in rules[num]:
+                if greater in manual[:i]:
+                    j = manual[:i].index(greater)
+                    violations.append((i, j))
+        return violations
+
+    for manual in lists:
+        violations = is_valid(manual)
+        # # part 1
+        # if violations == 0 and len(manual) > 0:
+        #     count += manual[int((len(manual)-1)/2)]
+        pass
+
+    # Part 2
+    dependencies = defaultdict(set)
+    in_degree = defaultdict(int)
+    all_elements = set()
+
+    for a, b in rules_list:
+        dependencies[a].add(b)
+        in_degree[b] += 1
+        all_elements.update([a, b])
+
+    for element in all_elements:
+        if element not in in_degree:
+            in_degree[element] = 0
+
+    ordering = []
+    queue = [node for node in in_degree if in_degree[node] == 0]
+
+    while queue:
+        current = queue.pop(0)
+        ordering.append(current)
+        for neighbor in dependencies[current]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    # If there are elements not included due to cycles, add them in an arbitrary consistent way
+    for element in all_elements:
+        if element not in ordering:
+            ordering.append(element)
+
+    # Create an order map to use for sorting
+    order_map = {num: index for index, num in enumerate(ordering)}
+
+    def sort_list(lst, order_map):
+        return sorted(lst, key=lambda x: order_map.get(x, 0))
+
+    # Correct a list and find the middle number
+    # lists = [[i for i in range(100)]]
+    for manual in lists:
+        corrected = copy.copy(manual)
+        iterations = 0
+        while True:
+            iterations += 1
+            violations = is_valid(corrected)
+            if len(violations) == 0:
+                break
+            elif iterations % 100 == 0:
+                random.shuffle(corrected)
+            for i, j in violations:
+                corrected[i], corrected[j] = corrected[j], corrected[i]
+        count += corrected[int((len(corrected) - 1) / 2)]
+    return count
+
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # print(day1())
     # print(day2())
     # print(day3())
-    print(day4())
+    # print(day4())
+    print(day5())
 
 
 
