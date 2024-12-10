@@ -7,8 +7,19 @@ import numpy as np
 import copy
 import re
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, deque
 import random
+from functools import total_ordering
+from itertools import combinations
+import time
+
+
+def printt(function, start):
+    to_print = function()
+    end = time.process_time()
+    elapsed = end-start
+    print(str(to_print) + '   ' + str(round(elapsed, 3)))
+    return end
 
 
 def read(filename):
@@ -182,6 +193,29 @@ def day3():
     return total
 
 
+@dataclass(frozen=True)
+class Coor:
+    __slots__ = ('row', 'col')  # Manually define slots
+    row: int
+    col: int
+
+    def __add__(self, other):
+        n_row = self.row + other.row
+        n_col = self.col + other.col
+        return Coor(n_row, n_col)
+
+    def __sub__(self, other):
+        n_row = self.row - other.row
+        n_col = self.col - other.col
+        return Coor(n_row, n_col)
+
+def check_adjacent_(letter, grid, direction, c: Coor, lines_count, line_length):
+    n = c + direction
+    if 0 <= n.row < lines_count and 0 <= n.col < line_length:
+        return grid[n.row][n.col] == letter, n
+    return False, n
+
+
 def day4():
 
     grid = read_lists('input4.txt', is_int=False)
@@ -190,27 +224,6 @@ def day4():
     line_length = len(grid[0])
     lines_count = len(grid)
     count = 0
-
-    @dataclass
-    class Coor:
-        row: int = 0
-        col: int = 0
-
-        def __add__(self, other):
-            n_row = self.row + other.row
-            n_col = self.col + other.col
-            return Coor(n_row, n_col)
-
-        def __sub__(self, other):
-            n_row = self.row - other.row
-            n_col = self.col - other.col
-            return Coor(n_row, n_col)
-
-    def check_adjacent_(letter, direction, c: Coor):
-        n = c + direction
-        if 0 <= n.row < lines_count and 0 <= n.col < line_length:
-            return grid[n.row][n.col] == letter, n
-        return False, n
 
     to_match = 'MAS'
     directions = [Coor(vert, hori) for vert in [-1, 1] for hori in [-1, 1]]
@@ -223,7 +236,7 @@ def day4():
                 for direction in directions:
                     c = Coor(i, j)
                     for idx in range(1, len(to_match)):
-                        found, next_c = check_adjacent_(to_match[idx], direction, c)
+                        found, next_c = check_adjacent_(to_match[idx], grid, direction, c, lines_count, line_length)
                         if not found:
                             break
                         elif idx == len(to_match) - 1:
@@ -277,7 +290,7 @@ def day5():
     rules_list = [tuple(map(int, r.split('|'))) for r in rules_list]
     lists = [[int(num) for num in i.split(',') if num.strip()] for i in lists]
 
-    print(lists[0])
+    # print(lists[0])
 
     # print(rules[-1])
 
@@ -308,66 +321,344 @@ def day5():
         pass
 
     # Part 2
-    dependencies = defaultdict(set)
-    in_degree = defaultdict(int)
-    all_elements = set()
 
-    for a, b in rules_list:
-        dependencies[a].add(b)
-        in_degree[b] += 1
-        all_elements.update([a, b])
-
-    for element in all_elements:
-        if element not in in_degree:
-            in_degree[element] = 0
-
-    ordering = []
-    queue = [node for node in in_degree if in_degree[node] == 0]
-
-    while queue:
-        current = queue.pop(0)
-        ordering.append(current)
-        for neighbor in dependencies[current]:
-            in_degree[neighbor] -= 1
-            if in_degree[neighbor] == 0:
-                queue.append(neighbor)
-
-    # If there are elements not included due to cycles, add them in an arbitrary consistent way
-    for element in all_elements:
-        if element not in ordering:
-            ordering.append(element)
-
-    # Create an order map to use for sorting
-    order_map = {num: index for index, num in enumerate(ordering)}
-
-    def sort_list(lst, order_map):
-        return sorted(lst, key=lambda x: order_map.get(x, 0))
-
-    # Correct a list and find the middle number
-    # lists = [[i for i in range(100)]]
     for manual in lists:
-        corrected = copy.copy(manual)
-        iterations = 0
-        while True:
-            iterations += 1
-            violations = is_valid(corrected)
-            if len(violations) == 0:
-                break
-            elif iterations % 100 == 0:
-                random.shuffle(corrected)
-            for i, j in violations:
-                corrected[i], corrected[j] = corrected[j], corrected[i]
-        count += corrected[int((len(corrected) - 1) / 2)]
+        if len(is_valid(manual)) == 0:
+            continue
+        manual_rules = {
+            rule: {num for num in rules[rule] if num in manual}
+            for rule in rules if rule in manual
+        }
+
+        in_degree = defaultdict(int)
+
+        for ele in manual:
+            in_degree[ele] = 0
+
+        for rule in manual_rules:
+            for b in manual_rules[rule]:
+                in_degree[b] += 1
+
+        queue = [ele for ele in in_degree if in_degree[ele] == 0]
+        ordering = []
+
+        while queue:
+            current = queue.pop(0)
+            ordering.append(current)
+            if current in manual_rules:  # Ensure current has dependencies
+                for neighbor in manual_rules[current]:
+                    in_degree[neighbor] -= 1
+                    if in_degree[neighbor] == 0:
+                        queue.append(neighbor)
+
+        # If there are elements not included due to cycles, add them in an arbitrary consistent way
+        for element in manual:
+            if element not in ordering:
+                ordering.append(element)
+                # print('dingdong')
+
+        # print(len(ordering))
+        count += ordering[int((len(ordering)-1)/2)]
+
     return count
+
+
+def day6():
+
+    string = read_all('input6.txt')
+    rows = string.split('\n')
+
+    map = np.zeros((len(rows), len(rows[0])), int)
+    visited = np.zeros_like(map, int)
+    # print(visited.shape)
+
+    for i, row in enumerate(rows):
+        for j, char in enumerate(row):
+            if char == '.':
+                map[i, j] = 0
+            elif char == '#':
+                map[i, j] = 1
+            elif char == '^':
+                map[i, j] = 2
+
+    # print(np.argwhere(map == 2)[0])
+
+
+def day7():
+    pass
+
+
+def day8():
+
+
+    # def BFS(graph, node):
+    #     visited = []  # List for visited nodes.
+    #     queue = []  # Initialize a queue
+    #     visited.append(node)
+    #     queue.append(node)
+    #     while queue:  # Creating loop to visit each node
+    #         m = queue.pop(0)
+    #         print(m, end=" ")
+    #         for direction in cardinal_dir[m]:
+    #
+    #             if neighbour not in visited:
+    #                 visited.append(neighbour)
+    #                 queue.append(neighbour)
+
+    lists = read_all('input8.txt')
+#     lists = """............
+# ........0...
+# .....0......
+# .......0....
+# ....0.......
+# ......A.....
+# ............
+# ............
+# ........A...
+# .........A..
+# ............
+# ............"""
+
+    grid = [list(row) for row in lists.splitlines()]
+
+    unique_towers = {ele for row in grid for ele in row} - {'.'}
+    # print(unique_towers)
+
+    def is_in_bounds(coord, dims):
+        return 0 <= coord.row < dims[0] and 0 <= coord.col < dims[0]
+
+    all_towers = defaultdict(list)
+    for row_idx, row in enumerate(grid):
+        for col_idx, ele in enumerate(row):
+            if ele != '.':
+                all_towers[ele].append(Coor(row_idx, col_idx))
+
+    all_towers = dict(all_towers)
+
+    interference_patterns = {}
+    for tower_type, coordinates in all_towers.items():
+        sorted_coordinates = sorted(coordinates, key=lambda c: (c.row, c.col))
+        interference_patterns[tower_type] = list(combinations(sorted_coordinates, 2))
+
+    dims = (len(grid), len(grid[0]))
+    nodes = np.zeros(dims)
+
+    for tower_type, patterns in interference_patterns.items():
+        for pattern in patterns:
+            direction = pattern[1] - pattern[0]
+            antinode1 = pattern[1]
+            antinode2 = pattern[0]
+            while(is_in_bounds(antinode1, dims)):
+                nodes[antinode1.row, antinode1.col] = 1
+                antinode1 = antinode1 + direction
+            while (is_in_bounds(antinode2, dims)):
+                nodes[antinode2.row, antinode2.col] = 1
+                antinode2 = antinode2 - direction
+
+    for row_idx, row in enumerate(grid):
+        new_row = []
+        for col_idx, ele in enumerate(row):
+            if ele == '.' and nodes[row_idx, col_idx] == 1:
+                new_row.append('#')
+            else:
+                new_row.append(ele)
+        # print(''.join(new_row))
+
+    return int(np.sum(nodes))
+
+
+def day9():
+
+    in_file = read_all('input9.txt')
+    # in_file = '2333133121414131402'
+
+    nums_list = [int(num) for num in list(in_file) if num != '\n']
+
+    file_blocks = []
+    for i, ele in enumerate(nums_list):
+        if i % 2 == 0:
+            for _ in range(ele):
+                file_blocks.append(i//2)
+        else:
+            for _ in range(ele):
+                file_blocks.append('.')
+
+    file_blocks_2_alloc = []
+    file_blocks_2_free = []
+    for i, ele in enumerate(nums_list):
+        if i % 2 == 0:
+            file_blocks_2_alloc.append((i, i//2, ele))
+            file_blocks_2_free.append(0)
+        else:
+            file_blocks_2_free.append(ele)
+
+    nums = deque(file_blocks)
+
+    # print(nums)
+
+    FINAL = []
+    while nums:
+        left = nums.popleft()
+        if left == '.':
+            right = '.'
+            while right == '.':
+                right = nums.pop()
+            FINAL.append(right)
+        else:
+            FINAL.append(left)
+
+    # print(FINAL)
+
+    checksum = 0
+    for i, ele in enumerate(FINAL):
+        checksum += i*ele
+
+    # print(file_blocks_2_alloc)
+
+    FINAL_2 = []
+    while file_blocks_2_alloc:
+        last = file_blocks_2_alloc.pop()
+        index_to_swap = None
+        for i, space in enumerate(file_blocks_2_free):
+            if i > last[0]:
+                break
+            if space >= last[2]:
+                index_to_swap = i
+                break
+        if index_to_swap is not None:
+            pos, id, count = last
+            file_blocks_2_free[index_to_swap] -= count
+            file_blocks_2_free[pos] = count
+            FINAL_2.append((index_to_swap, id, count))
+        else:
+            FINAL_2.append(last)
+
+    for pos, space in enumerate(file_blocks_2_free):
+        FINAL_2.append((pos, -1, space))
+
+    FINAL_2 = sorted(FINAL_2, key = lambda x: (x[0],-x[1]))
+
+    # print(FINAL_2)
+
+    out = []
+    for i, id, count in FINAL_2:
+        to_print = '.' if id == -1 else id
+        for _ in range(count):
+            out.append(to_print)
+
+    checksum_2 = 0
+    for i, id in enumerate(out):
+        # print(id, end='')
+        if id != '.':
+            checksum_2 += i*id
+    # print('')
+
+    return checksum_2
+
+
+def day10():
+
+    grid = read_all('input10.txt')
+#     grid = """89010123
+# 78121874
+# 87430965
+# 96549874
+# 45678903
+# 32019012
+# 01329801
+# 10456732"""
+
+    grid = [[int(char) for char in row] for row in grid.splitlines()]
+    grid_height = len(grid)
+    grid_width = len(grid[0])
+
+    # print(grid)
+
+    # how many valid trails are reachable
+    reachable_ends = np.zeros((grid_width, grid_height))
+    trail_signature = np.zeros((grid_width, grid_height))
+
+    directions = [Coor(vert, hori) for vert in [-1, 0, 1] for hori in [-1, 0, 1] if abs(vert) != abs(hori)]
+    # print(directions)
+
+    # init_coor = [(Coor(0, 0), [])]
+    trails = defaultdict(list)
+    trails_rev = defaultdict(list)
+    visited = np.zeros((grid_width, grid_height))
+
+    for i, row in enumerate(grid):
+        for j, num in enumerate(row):
+            # start a trail
+            for dir in directions:
+                current = Coor(i, j)
+                found, new = check_adjacent_(num+1, grid, dir, current, grid_height, grid_width)
+                if found:
+                    trails[current].append(new)
+                found_rev, new_rev = check_adjacent_(num-1, grid, dir, current, grid_height, grid_width)
+                if found_rev:
+                    trails_rev[current].append(new_rev)
+
+    def follow_rev(pos: Coor):
+        if visited[pos.row, pos.col]:
+            return
+        # print('new at  ' + str(pos))
+        visited[pos.row, pos.col] = True
+        reachable_ends[pos.row, pos.col] += 1
+        return [follow_rev(trail) for trail in trails_rev[pos]]
+
+    for i, row in enumerate(grid):
+        for j, num in enumerate(row):
+            if num == 9:
+                visited = np.zeros((grid_width, grid_height))
+                follow_rev(Coor(i, j))
+
+    def follow(pos: Coor):
+        if visited[pos.row, pos.col]:
+            return trail_signature[pos.row, pos.col]
+        visited[pos.row, pos.col] = True
+        if grid[pos.row][pos.col] == 9:
+            trail_signature[pos.row, pos.col] = 1
+        else:
+            trail_signature[pos.row, pos.col] = sum([follow(trail) for trail in trails[pos]])
+        return trail_signature[pos.row, pos.col]
+
+    count = 0
+    visited = np.zeros((grid_width, grid_height))
+    for i, row in enumerate(grid):
+        for j, num in enumerate(row):
+            if num == 0:
+                # count += reachable_ends[i, j]
+                count += follow(Coor(i, j))
+
+    return count
+
+
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    # print(day1())
-    # print(day2())
-    # print(day3())
-    # print(day4())
-    print(day5())
+    t = time.process_time()
+
+    # t = printt(day1, t)
+    # t = printt(day2, t)
+    # t = printt(day3, t)
+    # t = printt(day4, t)
+    # t = printt(day5, t)
+    # t = printt(day6, t)
+    # t = printt(day7, t)
+    # t = printt(day8, t)
+    # t = printt(day9, t)
+    t = printt(day10, t)
+    # t = printt(day11, t)
+    # t = printt(day12, t)
+    # t = printt(day13, t)
+    # t = printt(day14, t)
+    # t = printt(day15, t)
+    # t = printt(day16, t)
+    # t = printt(day17, t)
+    # t = printt(day18, t)
+    # t = printt(day19, t)
+
 
 
 
